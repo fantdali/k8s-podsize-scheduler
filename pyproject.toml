@@ -1,0 +1,12 @@
+[project]
+name = "k8s-podsize-scheduler"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "nbformat>=5.10.4",
+    "numpy",
+    "pandas",
+    "plotly",
+]
