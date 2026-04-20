@@ -94,16 +94,16 @@ class SoftBucketScorer:
     ):
         self.anchors = anchors or DEFAULT_ANCHORS
 
-    def score(self, node: Node, pod_cpu: float) -> float:
+    def score(self, node: Node, pod: Pod) -> float:
         current = compute_soft_counts(node, self.anchors)
-        incoming = soft_bucket_weights(pod_cpu, self.anchors)
+        incoming = soft_bucket_weights(pod.cpu_request, self.anchors)
         s = 0.0
         for k, (mu, sigma, alpha) in enumerate(self.anchors):
             s -= alpha * incoming[k] * current[k]
         return s
 
-    def score_all(self, nodes: list[Node], pod_cpu: float) -> list[float]:
-        return [self.score(n, pod_cpu) for n in nodes]
+    def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
+        return [self.score(n, pod) for n in nodes]
 
 
 # Pure density scorer D_j(x) = -SUM K(x, x_q)
@@ -115,13 +115,66 @@ class DensityScorer:
     def __init__(self, sigma: float = 2.0):
         self.sigma = sigma
 
-    def score(self, node: Node, pod_cpu: float) -> float:
+    def score(self, node: Node, pod: Pod) -> float:
         return -sum(
-            gaussian_kernel(pod_cpu, q, self.sigma) for q in node.pod_cpu_list()
+            gaussian_kernel(pod.cpu_request, q, self.sigma) for q in node.pod_cpu_list()
         )
 
-    def score_all(self, nodes: list[Node], pod_cpu: float) -> list[float]:
-        return [self.score(n, pod_cpu) for n in nodes]
+    def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
+        return [self.score(n, pod) for n in nodes]
+
+
+class LeastAllocatedScorer:
+    """NodeResourcesLeastAllocated from kube-scheduler.
+
+    Prefers nodes with the most free resources after placing the pod:
+        score = ((allocatable − used − request) / allocatable) * max_score
+    """
+
+    def __init__(self, max_score: float = 10.0):
+        self.max_score = max_score
+
+    def score(self, node: Node, pod: Pod) -> float:
+        if node.allocatable_cpu == 0:
+            return 0.0
+        remaining = node.allocatable_cpu - node.used_cpu - pod.cpu_request
+        return max(0.0, remaining / node.allocatable_cpu) * self.max_score
+
+    def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
+        return [self.score(n, pod) for n in nodes]
+
+
+class AntiAffinityScorer:
+    """Penalise placing a pod on a node that already runs pods of the same service.
+
+    score = −weight * count_of_same_service_on_node
+    """
+
+    def __init__(self, weight: float = 5.0):
+        self.weight = weight
+
+    def score(self, node: Node, pod: Pod) -> float:
+        same = sum(1 for p in node.pods if p.service == pod.service)
+        return -self.weight * same
+
+    def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
+        return [self.score(n, pod) for n in nodes]
+
+
+class CompositeScorer:
+    """Combine multiple scorers with weights.
+
+    final_score = SUM weight_i * scorer_i.score(node, pod)
+    """
+
+    def __init__(self, scorers: list[tuple[float, object]]):
+        self.scorers = scorers  # [(weight, scorer), ...]
+
+    def score(self, node: Node, pod: Pod) -> float:
+        return sum(w * s.score(node, pod) for w, s in self.scorers)
+
+    def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
+        return [self.score(n, pod) for n in nodes]
 
 
 # Cluster simulation
@@ -151,7 +204,7 @@ class Cluster:
         feasible = self._feasible_nodes(pod)
         if not feasible:
             return None
-        scores = {n.name: self.scorer.score(n, pod.cpu_request) for n in feasible}
+        scores = {n.name: self.scorer.score(n, pod) for n in feasible}
         best = max(scores, key=scores.get)
 
         # bind
