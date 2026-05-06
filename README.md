@@ -28,7 +28,29 @@ $$
 S_j = -D_j(x)
 $$
 
+### Density V2: asymmetric larger-pod penalty
+
+A refinement of the basic density scorer that adds a penalty when an existing pod on the node is _larger_ than the incoming pod.
+The intuition: placing a small pod next to a large pod wastes co-location opportunities for other large pods, so we should nudge small pods away from large-pod nodes.
+
+$$
+D^{v2}_j(x) = \sum_{q \in node_j} K(x, x_q) \cdot \left(1 + \lambda \cdot \frac{\max(0,\, x_q - x)}{x}\right)
+$$
+
+where $\lambda$ (`larger_penalty`) controls how aggressively larger neighbours are penalised.
+
+Score:
+
+$$
+S_j = -D^{v2}_j(x)
+$$
+
+When $\lambda = 0$ this reduces to the plain density scorer.
+Larger $\lambda$ increasingly steers small pods toward nodes already occupied by similarly-sized (small) pods, at the cost of a less uniform CPU spread.
+
 This is the closest continuous version of "balance count of same-size pods across nodes".
+
+### Soft buckets: a middle ground between discrete classes and continuous similarity
 
 Instead of rigid bins, every pod contributes partially to nearby sizes.
 
@@ -137,6 +159,17 @@ where:
     </tr>
     <tr>
       <th>2</th>
+      <td>DensityV2</td>
+      <td>8.15</td>
+      <td>0.80</td>
+      <td>0.38</td>
+      <td>0.24</td>
+      <td>0.46</td>
+      <td>0.32</td>
+      <td>1.39</td>
+    </tr>
+    <tr>
+      <th>3</th>
       <td>Random</td>
       <td>17.30</td>
       <td>2.76</td>
@@ -145,6 +178,61 @@ where:
       <td>1.49</td>
       <td>0.59</td>
       <td>5.60</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>Least-Allocated</td>
+      <td>1.41</td>
+      <td>5.12</td>
+      <td>4.63</td>
+      <td>1.65</td>
+      <td>0.44</td>
+      <td>0.59</td>
+      <td>7.31</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>Soft-Bucket + AntiAffinity</td>
+      <td>4.61</td>
+      <td>0.66</td>
+      <td>0.37</td>
+      <td>0.26</td>
+      <td>0.18</td>
+      <td>0.30</td>
+      <td>1.11</td>
+    </tr>
+    <tr>
+      <th>6</th>
+      <td>Density + AntiAffinity</td>
+      <td>5.62</td>
+      <td>0.66</td>
+      <td>0.38</td>
+      <td>0.24</td>
+      <td>0.43</td>
+      <td>0.29</td>
+      <td>1.33</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>DensityV2 + AntiAffinity</td>
+      <td>5.62</td>
+      <td>0.66</td>
+      <td>0.38</td>
+      <td>0.24</td>
+      <td>0.43</td>
+      <td>0.29</td>
+      <td>1.33</td>
+    </tr>
+    <tr>
+      <th>8</th>
+      <td>Least-Allocated + AntiAffinity</td>
+      <td>3.23</td>
+      <td>1.36</td>
+      <td>0.84</td>
+      <td>0.80</td>
+      <td>0.52</td>
+      <td>0.33</td>
+      <td>2.48</td>
     </tr>
   </tbody>
 </table>

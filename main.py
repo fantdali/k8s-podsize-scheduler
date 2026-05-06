@@ -2,6 +2,8 @@ import math
 import random
 from dataclasses import dataclass, field
 
+from numpy import ma
+
 # Objects
 
 
@@ -75,7 +77,7 @@ def compute_soft_counts(
     return counts
 
 
-# Scorer: soft-bucket imbalance
+# Scorers
 
 
 class SoftBucketScorer:
@@ -106,11 +108,12 @@ class SoftBucketScorer:
         return [self.score(n, pod) for n in nodes]
 
 
-# Pure density scorer D_j(x) = -SUM K(x, x_q)
-
-
 class DensityScorer:
-    """Simple kernel-density scorer."""
+    """
+    Simple kernel-density scorer.
+
+    D_j(x) = -SUM K(x, x_q)
+    """
 
     def __init__(self, sigma: float = 2.0):
         self.sigma = sigma
@@ -119,6 +122,36 @@ class DensityScorer:
         return -sum(
             gaussian_kernel(pod.cpu_request, q, self.sigma) for q in node.pod_cpu_list()
         )
+
+    def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
+        return [self.score(n, pod) for n in nodes]
+
+
+class DensityScorerV2:
+    """Kernel-density scorer with larger resource penalty."""
+
+    def __init__(
+        self,
+        sigma: float = 2.0,
+        larger_penalty: float = 0.1,
+    ):
+        self.sigma = sigma
+        self.larger_penalty = larger_penalty
+
+    def score(self, node: Node, pod: Pod) -> float:
+        density = 0.0
+
+        for q in node.pod_cpu_list():
+            k = gaussian_kernel(pod.cpu_request, q, self.sigma)
+
+            if q > pod.cpu_request:
+                k *= 1.0 + self.larger_penalty * (q - pod.cpu_request) / max(
+                    pod.cpu_request, 1e-6
+                )
+
+            density += k
+
+        return -density
 
     def score_all(self, nodes: list[Node], pod: Pod) -> list[float]:
         return [self.score(n, pod) for n in nodes]
